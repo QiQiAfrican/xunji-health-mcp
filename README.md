@@ -1,8 +1,8 @@
-# Xunji Health MCP v0.3.1
+# Xunji Health MCP v0.3.2
 
 A small, read-only MCP server for retrieving training data from the Xunji Open API.
 
-## What changed in v0.3.1
+## What changed in v0.3.2
 
 - Uses the official `@modelcontextprotocol/sdk` stateless Streamable HTTP pattern.
 - Creates a fresh `McpServer` and `StreamableHTTPServerTransport` for every `POST /mcp`.
@@ -11,11 +11,13 @@ A small, read-only MCP server for retrieving training data from the Xunji Open A
 - Logs only request metadata (method, path, status, duration, JSON-RPC method) and safe error type/code.
 - Never logs request bodies, tool arguments, Xunji responses, API keys, or health data.
 - Allows the Render public hostname while retaining DNS-rebinding protection.
+- Accepts successful Xunji responses based on HTTP status plus the documented `res` field; `success: true` is not required.
+- Connects `xunji_query_plan` to the official gzip plan endpoint with `list` and `get` actions.
 
 ## Tools
 
 - `xunji_get_training`: read one date of training records.
-- `xunji_query_plan`: read an inclusive date range, up to 31 days.
+- `xunji_query_plan`: list official plans or read one plan over an optional range of up to 92 days.
 
 Both tools are annotated as read-only and call only Xunji's read endpoint. There is no write-back tool or write endpoint in this project.
 
@@ -28,6 +30,7 @@ Set these in Render, not in source control:
 | `XUNJI_API_KEY` | Yes | none |
 | `PORT` | No | `10000` |
 | `XUNJI_API_BASE` | No | `https://trains.xunjiapp.cn` |
+| `XUNJI_PLAN_API_BASE` | No | `https://api.xunjiapp.cn` |
 | `XUNJI_REQUEST_TIMEOUT_MS` | No | `20000` |
 | `MCP_ALLOWED_HOSTS` | No | Render hostname plus local test hosts |
 
@@ -58,4 +61,4 @@ The ChatGPT MCP URL remains:
 https://xunji-health-mcp.onrender.com/mcp
 ```
 
-After deployment, `/health` should return version `0.3.1`.
+After deployment, `/health` should return version `0.3.2`.
