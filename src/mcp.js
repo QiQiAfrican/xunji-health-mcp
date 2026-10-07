@@ -24,7 +24,7 @@ function toolError(error) {
 
 export function createXunjiMcpServer() {
   const server = new McpServer(
-    { name: 'xunji-health-mcp', version: '0.3.0' },
+    { name: 'xunji-health-mcp', version: '0.3.1' },
     { capabilities: { tools: {} } }
   );
 

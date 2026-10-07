@@ -79,7 +79,7 @@ async function postTrainingRequest(datestr, includeFullData = false) {
         authorization: `Bearer ${apiKey}`,
         'content-type': 'application/json',
         accept: 'application/json',
-        'user-agent': 'xunji-health-mcp/0.3.0'
+        'user-agent': 'xunji-health-mcp/0.3.1'
       },
       body: JSON.stringify({
         schema_version: 'train_open_api_v2',

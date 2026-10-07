@@ -3,8 +3,25 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createXunjiMcpServer } from './mcp.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const DEFAULT_PORT = 10_000;
+const DEFAULT_PUBLIC_HOST = 'xunji-health-mcp.onrender.com';
+
+function getAllowedHosts() {
+  const configured = process.env.MCP_ALLOWED_HOSTS
+    ?.split(',')
+    .map((host) => host.trim())
+    .filter(Boolean) || [];
+  const renderHost = process.env.RENDER_EXTERNAL_HOSTNAME?.trim();
+  return [...new Set([
+    '127.0.0.1',
+    'localhost',
+    '[::1]',
+    DEFAULT_PUBLIC_HOST,
+    ...(renderHost ? [renderHost] : []),
+    ...configured
+  ])];
+}
 
 function rpcMetadata(body) {
   const messages = Array.isArray(body) ? body : [body];
@@ -37,7 +54,12 @@ function jsonRpcError(res, status, code, message) {
 }
 
 export function createApp() {
-  const app = createMcpExpressApp();
+  // Render binds the process to all interfaces. Keep DNS-rebinding protection
+  // enabled by explicitly allowing the public service host plus local test hosts.
+  const app = createMcpExpressApp({
+    host: '0.0.0.0',
+    allowedHosts: getAllowedHosts()
+  });
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, service: 'xunji-health-mcp', version: VERSION });
