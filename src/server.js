@@ -1,94 +1,167 @@
-import http from "node:http";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { z } from "zod";
-import { getTraining, queryPlan } from "./xunji.js";
+import { fileURLToPath } from 'node:url';
+import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createXunjiMcpServer } from './mcp.js';
 
-const mcp = new McpServer({ name: "xunji-health-mcp", version: "0.2.0" });
+const VERSION = '0.3.0';
+const DEFAULT_PORT = 10_000;
 
-mcp.tool(
-  "xunji_get_training",
-  "Read Xunji training data for one date. full_data=true returns detailed sets, RPE, notes, rests, metrics and heart-rate data.",
-  {
-    date: z.string().describe("YYYY-MM-DD"),
-    full_data: z.boolean().default(false),
-  },
-  async ({ date, full_data }) => ({
-    content: [{ type: "text", text: JSON.stringify(await getTraining(date, full_data)) }],
-  })
-);
-
-mcp.tool(
-  "xunji_query_plan",
-  "Query Xunji official training plans.",
-  { payload: z.record(z.any()) },
-  async ({ payload }) => ({
-    content: [{ type: "text", text: JSON.stringify(await queryPlan(payload)) }],
-  })
-);
-
-// Read-only v0.2: no write-back tool.
-const transport = new StreamableHTTPServerTransport({
-  sessionIdGenerator: undefined, // stateless mode
-});
-await mcp.connect(transport);
-
-const port = Number(process.env.PORT || 3000);
-
-function sendJson(res, status, obj) {
-  res.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-  });
-  res.end(JSON.stringify(obj));
+function rpcMetadata(body) {
+  const messages = Array.isArray(body) ? body : [body];
+  const methods = messages
+    .map((message) => typeof message?.method === 'string' ? message.method : null)
+    .filter(Boolean)
+    .slice(0, 8);
+  return {
+    rpcMethods: methods.length ? methods.join(',') : 'none',
+    batchSize: messages.length
+  };
 }
 
-async function readJsonBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  if (!chunks.length) return undefined;
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : undefined;
+function safeErrorMetadata(error, phase) {
+  return {
+    event: 'mcp_error',
+    phase,
+    errorType: typeof error?.name === 'string' ? error.name.slice(0, 80) : 'Error',
+    errorCode: ['string', 'number'].includes(typeof error?.code) ? String(error.code).slice(0, 80) : 'none'
+  };
 }
 
-http.createServer(async (req, res) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-  const started = Date.now();
+function jsonRpcError(res, status, code, message) {
+  if (res.headersSent) return;
+  res.status(status).json({
+    jsonrpc: '2.0',
+    error: { code, message },
+    id: null
+  });
+}
 
-  res.on("finish", () => {
-    console.log(`${req.method} ${url.pathname} -> ${res.statusCode} ${Date.now() - started}ms`);
+export function createApp() {
+  const app = createMcpExpressApp();
+
+  app.get('/health', (_req, res) => {
+    res.json({ ok: true, service: 'xunji-health-mcp', version: VERSION });
   });
 
-  if (url.pathname === "/health") {
-    return sendJson(res, 200, {
-      ok: true,
-      service: "xunji-health-mcp",
-      version: "0.2.0",
-    });
-  }
+  app.post('/mcp', async (req, res) => {
+    const startedAt = performance.now();
+    const rpc = rpcMetadata(req.body);
+    let server;
+    let transport;
+    let cleanedUp = false;
 
-  if (url.pathname === "/mcp") {
-    try {
-      // The SDK's Streamable HTTP transport needs the already-parsed JSON-RPC
-      // body when using Node's native http server.
-      const parsedBody =
-        req.method === "POST" ? await readJsonBody(req) : undefined;
+    const cleanup = async () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      await Promise.allSettled([
+        transport?.close(),
+        server?.close()
+      ]);
+    };
 
-      return await transport.handleRequest(req, res, parsedBody);
-    } catch (e) {
-      console.error("MCP request failed:", e);
-      if (!res.headersSent) {
-        return sendJson(res, 500, {
-          error: String(e?.message || e),
-        });
+    const logCompletion = () => {
+      console.info(JSON.stringify({
+        event: 'http_request',
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: Math.round(performance.now() - startedAt),
+        ...rpc
+      }));
+    };
+
+    res.once('finish', logCompletion);
+    res.once('close', () => {
+      if (!res.writableFinished) {
+        console.warn(JSON.stringify({
+          event: 'mcp_connection_closed',
+          phase: 'response',
+          ...rpc
+        }));
       }
-      res.end();
-      return;
-    }
-  }
+      void cleanup();
+    });
 
-  res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-  res.end("Not found");
-}).listen(port, "0.0.0.0", () => {
-  console.log(`Xunji MCP v0.2 listening on ${port}`);
-});
+    try {
+      // Stateless mode requires a fresh server and transport for every POST.
+      // Reusing either instance can mix client state and request IDs.
+      server = createXunjiMcpServer();
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (error) {
+      console.error(JSON.stringify(safeErrorMetadata(error, transport ? 'handle_request' : 'setup')));
+      jsonRpcError(res, 500, -32603, 'Internal server error');
+      await cleanup();
+    }
+  });
+
+  const rejectUnsupportedMcpMethod = (req, res) => {
+    console.info(JSON.stringify({
+      event: 'http_request',
+      method: req.method,
+      path: req.path,
+      status: 405,
+      durationMs: 0,
+      rpcMethods: 'none',
+      batchSize: 0
+    }));
+    res.set('Allow', 'POST');
+    jsonRpcError(res, 405, -32000, 'Method not allowed. Use POST for stateless MCP requests.');
+  };
+
+  app.get('/mcp', rejectUnsupportedMcpMethod);
+  app.delete('/mcp', rejectUnsupportedMcpMethod);
+
+  // Express JSON-parser failures occur before the MCP route. Report only
+  // non-sensitive metadata; never include the parser message or body.
+  app.use((error, req, res, next) => {
+    if (!error) return next();
+    const status = error?.type === 'entity.too.large' ? 413 : 400;
+    console.error(JSON.stringify({
+      event: 'mcp_error',
+      phase: 'parse_request',
+      errorType: typeof error?.name === 'string' ? error.name.slice(0, 80) : 'Error',
+      errorCode: typeof error?.type === 'string' ? error.type.slice(0, 80) : 'none',
+      method: req.method,
+      path: req.path,
+      status
+    }));
+    jsonRpcError(
+      res,
+      status,
+      status === 413 ? -32000 : -32700,
+      status === 413 ? 'Request body too large' : 'Parse error'
+    );
+  });
+
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'not_found' });
+  });
+
+  return app;
+}
+
+export function startServer(port = Number.parseInt(process.env.PORT || '', 10) || DEFAULT_PORT) {
+  const app = createApp();
+  const httpServer = app.listen(port, '0.0.0.0', () => {
+    const address = httpServer.address();
+    const activePort = typeof address === 'object' && address ? address.port : port;
+    console.info(`Xunji MCP v${VERSION} listening on ${activePort}`);
+  });
+
+  const shutdown = (signal) => {
+    console.info(`Received ${signal}; shutting down`);
+    httpServer.close((error) => process.exit(error ? 1 : 0));
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
+  return httpServer;
+}
+
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) startServer();
