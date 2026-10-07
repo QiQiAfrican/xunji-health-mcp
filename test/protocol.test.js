@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { after, before, test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -6,6 +7,22 @@ import { createApp } from '../src/server.js';
 
 let httpServer;
 let baseUrl;
+
+function getWithHost(host) {
+  const url = new URL('/health', baseUrl);
+  return new Promise((resolve, reject) => {
+    const request = http.get({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      headers: { host }
+    }, (response) => {
+      response.resume();
+      response.once('end', () => resolve(response.statusCode));
+    });
+    request.once('error', reject);
+  });
+}
 
 before(async () => {
   httpServer = createApp().listen(0, '127.0.0.1');
@@ -23,14 +40,19 @@ after(async () => {
   });
 });
 
-test('health endpoint reports v0.3.0', async () => {
+test('health endpoint reports v0.3.1', async () => {
   const response = await fetch(`${baseUrl}/health`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     ok: true,
     service: 'xunji-health-mcp',
-    version: '0.3.0'
+    version: '0.3.1'
   });
+});
+
+test('Render public host is allowed and unknown hosts are rejected', async () => {
+  assert.equal(await getWithHost('xunji-health-mcp.onrender.com'), 200);
+  assert.equal(await getWithHost('attacker.example'), 403);
 });
 
 test('SDK client completes initialize and tools/list', async () => {
