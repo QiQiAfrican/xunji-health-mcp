@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
-import { getTraining, queryPlan, XunjiError } from './xunji.js';
+import { getTraining, queryOfficialPlan, XunjiError } from './xunji.js';
 
 function toolResult(value) {
   return {
@@ -24,7 +24,7 @@ function toolError(error) {
 
 export function createXunjiMcpServer() {
   const server = new McpServer(
-    { name: 'xunji-health-mcp', version: '0.3.1' },
+    { name: 'xunji-health-mcp', version: '0.3.2' },
     { capabilities: { tools: {} } }
   );
 
@@ -59,13 +59,13 @@ export function createXunjiMcpServer() {
     'xunji_query_plan',
     {
       title: 'Query Xunji training plan range',
-      description: 'Read Xunji training records across an inclusive date range (maximum 31 days). This tool is read-only.',
+      description: 'List official Xunji plans, or read one plan and its calendar. This tool is read-only.',
       inputSchema: {
-        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('First date in YYYY-MM-DD format'),
-        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Last date in YYYY-MM-DD format'),
-        include_full_data: z.boolean().optional().default(false).describe(
-          'Include incomplete sets, RPE, notes, feelings, side-specific weights and detailed metrics'
-        )
+        action: z.enum(['list', 'get']).describe('Use list first, then get with a returned plan_ref'),
+        plan_ref: z.string().optional().describe('Plan reference returned by list; required for get'),
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Optional first date for get'),
+        end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Optional last date for get; maximum range is 92 days'),
+        include_movements: z.boolean().optional().default(true).describe('Include movement names and target sets for get')
       },
       annotations: {
         readOnlyHint: true,
@@ -76,7 +76,7 @@ export function createXunjiMcpServer() {
     },
     async (args) => {
       try {
-        return toolResult(await queryPlan(args));
+        return toolResult(await queryOfficialPlan(args));
       } catch (error) {
         return toolError(error);
       }

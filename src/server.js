@@ -3,7 +3,7 @@ import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createXunjiMcpServer } from './mcp.js';
 
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const DEFAULT_PORT = 10_000;
 const DEFAULT_PUBLIC_HOST = 'xunji-health-mcp.onrender.com';
 
