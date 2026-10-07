@@ -1,8 +1,8 @@
-# Xunji Health MCP v0.3.2
+# Xunji Health MCP v0.4.0
 
 A small, read-only MCP server for retrieving training data from the Xunji Open API.
 
-## What changed in v0.3.2
+## What changed in v0.4.0
 
 - Uses the official `@modelcontextprotocol/sdk` stateless Streamable HTTP pattern.
 - Creates a fresh `McpServer` and `StreamableHTTPServerTransport` for every `POST /mcp`.
@@ -13,13 +13,18 @@ A small, read-only MCP server for retrieving training data from the Xunji Open A
 - Allows the Render public hostname while retaining DNS-rebinding protection.
 - Accepts successful Xunji responses based on HTTP status plus the documented `res` field; `success: true` is not required.
 - Connects `xunji_query_plan` to the official gzip plan endpoint with `list` and `get` actions.
+- Adds the read-only `xunji_get_movement_catalog` tool backed by `/api_movement_catalog_for_llm_v2`.
+- Preserves all upstream catalog fields and adds a deterministic `catalog_id` when the upstream record has no `catalog_id`, `id`, or `key`.
 
 ## Tools
 
 - `xunji_get_training`: read one date of training records.
+- `xunji_get_movement_catalog`: read the complete standard movement catalog.
 - `xunji_query_plan`: list official plans or read one plan over an optional range of up to 92 days.
 
-Both tools are annotated as read-only and call only Xunji's read endpoint. There is no write-back tool or write endpoint in this project.
+All tools are annotated as read-only and call only Xunji read endpoints. There is no write-back tool or write endpoint in this project.
+
+The catalog API currently returns all movements in one response with `schema`, `version`, and `movements`; it does not advertise pagination or filtering. Each movement currently contains `name`, `type`, `exetype`, and `aliases`. The MCP server passes through every raw field so future upstream additions are retained. Because the current API exposes no standalone identifier and some names repeat, `catalog_id` is derived from the presently unique `name + type + exetype` tuple. It is not a Xunji internal key.
 
 ## Environment variables
 
@@ -61,4 +66,4 @@ The ChatGPT MCP URL remains:
 https://xunji-health-mcp.onrender.com/mcp
 ```
 
-After deployment, `/health` should return version `0.3.2`.
+After deployment, `/health` should return version `0.4.0`.
