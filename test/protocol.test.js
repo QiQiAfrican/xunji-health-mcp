@@ -40,13 +40,13 @@ after(async () => {
   });
 });
 
-test('health endpoint reports v0.3.2', async () => {
+test('health endpoint reports v0.4.0', async () => {
   const response = await fetch(`${baseUrl}/health`);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     ok: true,
     service: 'xunji-health-mcp',
-    version: '0.3.2'
+    version: '0.4.0'
   });
 });
 
@@ -63,7 +63,7 @@ test('SDK client completes initialize and tools/list', async () => {
     const result = await client.listTools();
     assert.deepEqual(
       result.tools.map((tool) => tool.name).sort(),
-      ['xunji_get_training', 'xunji_query_plan']
+      ['xunji_get_movement_catalog', 'xunji_get_training', 'xunji_query_plan']
     );
     assert.ok(result.tools.every((tool) => tool.annotations?.readOnlyHint === true));
   } finally {
@@ -85,7 +85,7 @@ test('concurrent clients have isolated stateless transports', async () => {
 
   const results = await Promise.all(Array.from({ length: 4 }, (_, index) => runClient(index)));
   for (const names of results) {
-    assert.deepEqual(names, ['xunji_get_training', 'xunji_query_plan']);
+    assert.deepEqual(names, ['xunji_get_movement_catalog', 'xunji_get_training', 'xunji_query_plan']);
   }
 });
 
