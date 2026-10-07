@@ -1,0 +1,12 @@
+{
+  "name": "xunji-health-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.19.1",
+    "zod": "^3.25.0"
+  }
+}
