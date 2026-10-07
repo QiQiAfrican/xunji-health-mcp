@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const DEFAULT_BASE_URL = 'https://trains.xunjiapp.cn';
 const DEFAULT_PLAN_BASE_URL = 'https://api.xunjiapp.cn';
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -102,7 +104,7 @@ async function postXunjiJson(endpoint, body, baseEnvName, defaultBaseUrl) {
         'content-type': 'application/json',
         accept: 'application/json',
         'accept-encoding': 'gzip',
-        'user-agent': 'xunji-health-mcp/0.3.2'
+        'user-agent': 'xunji-health-mcp/0.4.0'
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs)
@@ -156,6 +158,46 @@ export async function getTraining({ date, include_full_data = false }) {
     throw new XunjiError('INVALID_DATE', 'date must use YYYY-MM-DD.', 400);
   }
   return postTrainingRequest(date, include_full_data);
+}
+
+function derivedCatalogId(movement) {
+  const identity = JSON.stringify([
+    movement?.name ?? '',
+    movement?.type ?? '',
+    movement?.exetype ?? ''
+  ]);
+  return `xjmv_${createHash('sha256').update(identity).digest('hex').slice(0, 24)}`;
+}
+
+export async function getMovementCatalog() {
+  const res = await postXunjiJson(
+    '/api_movement_catalog_for_llm_v2',
+    {},
+    'XUNJI_API_BASE',
+    DEFAULT_BASE_URL
+  );
+
+  if (res === null || typeof res !== 'object' || !Array.isArray(res.movements)) {
+    throw new XunjiError(
+      'XUNJI_INVALID_RESPONSE',
+      'Xunji movement catalog response is missing movements.',
+      502
+    );
+  }
+
+  return {
+    ...res,
+    movements: res.movements.map((movement) => ({
+      ...movement,
+      // The current upstream catalog exposes no standalone id/key. Prefer a
+      // future upstream identifier when present; otherwise derive a stable id
+      // from the catalog's currently unique name/type/exetype combination.
+      catalog_id: movement?.catalog_id
+        ?? movement?.id
+        ?? movement?.key
+        ?? derivedCatalogId(movement)
+    }))
+  };
 }
 
 export async function queryOfficialPlan({

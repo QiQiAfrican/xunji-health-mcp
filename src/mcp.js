@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
-import { getTraining, queryOfficialPlan, XunjiError } from './xunji.js';
+import { getMovementCatalog, getTraining, queryOfficialPlan, XunjiError } from './xunji.js';
 
 function toolResult(value) {
   return {
@@ -24,7 +24,7 @@ function toolError(error) {
 
 export function createXunjiMcpServer() {
   const server = new McpServer(
-    { name: 'xunji-health-mcp', version: '0.3.2' },
+    { name: 'xunji-health-mcp', version: '0.4.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -49,6 +49,28 @@ export function createXunjiMcpServer() {
     async (args) => {
       try {
         return toolResult(await getTraining(args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'xunji_get_movement_catalog',
+    {
+      title: 'Get Xunji movement catalog',
+      description: 'Read the complete Xunji movement catalog, including the standard Chinese name, classification/muscle fields, aliases, all upstream fields, and a stable catalog_id. The current upstream API returns the complete catalog without pagination or filters. This tool is read-only.',
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true
+      }
+    },
+    async () => {
+      try {
+        return toolResult(await getMovementCatalog());
       } catch (error) {
         return toolError(error);
       }
